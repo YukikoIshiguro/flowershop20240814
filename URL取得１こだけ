@@ -1,0 +1,56 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import pandas as pd
+import os
+
+# WebDriverのパスを設定
+driver_path = 'C:\\Users\\USER\\Desktop\\chromedriver.exe'
+
+# サービスオブジェクトを作成してWebDriverに渡す
+service = Service(driver_path)
+driver = webdriver.Chrome(service=service)
+
+# 指定されたURLにアクセス
+url = 'https://www.hanacupid.or.jp/stores/area/01'
+driver.get(url)
+
+# ターミナルから市区町村名を入力
+city_name = input("市区町村名を入力してください: ")
+
+try:
+    # 入力された市区町村名のリンクを取得してクリック
+    city_link = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, f'//li/a[contains(text(), "{city_name}")]'))
+    )
+    
+    # クリックしてページ遷移
+    city_link.click()
+    print(f"{city_name}のリンクをクリックしました。")
+    
+    # 画面遷移を待機してURLを取得
+    WebDriverWait(driver, 10).until(EC.url_changes(url))
+    new_url = driver.current_url
+    print(f"遷移後のURL: {new_url}")
+
+    # ExcelにURLを保存
+    data = [{'市区町村': city_name, 'URL': new_url}]
+    df = pd.DataFrame(data)
+    
+    # 出力ファイルパスをユーザーのドキュメントフォルダに設定
+    output_directory = os.path.join(os.path.expanduser('~'), 'Documents')
+    output_file_path = os.path.join(output_directory, f'{city_name}_url.xlsx')
+    
+    # データフレームをExcelファイルに書き出す
+    df.to_excel(output_file_path, index=False, engine='openpyxl')
+    
+    print(f"Excelファイル '{output_file_path}' に保存されました！")
+
+except Exception as e:
+    print(f"Error: {e}")
+finally:
+    # ウェブドライバーを終了
+    driver.quit()
+#2024_08_14市区町村のURL取得ツールその１＿ひとつだけ
