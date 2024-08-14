@@ -1,0 +1,88 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
+import pandas as pd
+import os
+
+# WebDriverのパスを設定
+driver_path = 'C:\\Users\\USER\\Desktop\\chromedriver.exe'
+
+# サービスオブジェクトを作成してWebDriverに渡す
+service = Service(driver_path)
+driver = webdriver.Chrome(service=service)
+
+# 指定されたURLにアクセス
+url = 'https://www.hanacupid.or.jp/stores/details/03101'
+driver.get(url)
+
+# ページの読み込みを待機
+try:
+    # 'data' クラスの <div> が見つかるまで最大10秒待機
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'data')))
+    print("Page loaded successfully.")
+except:
+    print("Error: The 'data' div could not be found.")
+    driver.quit()
+    exit()
+
+# BeautifulSoupを使用してページソースを解析
+soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+# 店名を取得
+store_name_tag = soup.find('h2', class_='storeName')
+store_name = store_name_tag.text.strip() if store_name_tag else '店名が見つかりませんでした'
+
+# 店名をターミナルに出力
+print(f"店名: {store_name}")
+
+# 'data' クラスの <div> を取得
+data_div = soup.find('div', class_='data')
+
+if data_div is not None:
+    # データを格納するリストを作成
+    data = [{'項目': '店名', '内容': store_name}]  # 店名を最初の項目として追加
+
+    # <dt> と <dd> のペアを取得してデータリストに追加
+    for dt, dd in zip(data_div.find_all('dt'), data_div.find_all('dd')):
+        item_name = dt.text.strip()
+        item_content = dd.text.strip()
+
+        # 「配達エリア」の文字列を削除
+        if "配達エリア" in item_name:
+            item_name = item_name.replace("配達エリア", "").strip()
+
+        print(f"{item_name}: {item_content}")
+        data.append({'項目': item_name, '内容': item_content})
+
+    # データフレームを作成
+    df = pd.DataFrame(data)
+
+    # 定休日の項目と内容を一つのレコードにする
+    for i, row in df.iterrows():
+        if row['項目'] == '定休日':
+            # 項目と内容を結合
+            df.at[i, '項目'] = f"{row['項目']} {row['内容']}"
+            df.at[i, '内容'] = ''  # 内容カラムを空にする
+
+    # 空の内容列を削除し、整形
+    df = df[df['内容'] != '']
+
+    # 出力ファイルパスをユーザーのドキュメントフォルダに設定
+    output_directory = os.path.join(os.path.expanduser('~'), 'Documents')
+    output_file_path = os.path.join(output_directory, 'ohanayasan_result_info.xlsx')
+
+    # データフレームをExcelファイルに書き出す
+    df.to_excel(output_file_path, index=False, engine='openpyxl')
+
+    print(f"Excelファイル '{output_file_path}' に保存されました！")
+
+else:
+    print("Error: 'data' div was not found in the page source.")
+
+# ウェブドライバーを終了
+driver.quit()
+
+#2024_08_14A4列の定休日が消えた問題あり
