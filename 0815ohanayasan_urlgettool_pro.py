@@ -1,0 +1,70 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import pandas as pd
+import os
+
+# WebDriverのパスを設定
+driver_path = 'C:\\Users\\USER\\Desktop\\chromedriver.exe'
+
+# サービスオブジェクトを作成してWebDriverに渡す
+service = Service(driver_path)
+driver = webdriver.Chrome(service=service)
+
+# 指定されたURLにアクセス
+url = 'https://www.hanacupid.or.jp/stores/area/31'
+driver.get(url)
+
+# ターミナルから市区町村名を入力（カンマ区切りで複数入力）
+city_names_input = input("市区町村名をカンマ区切りで入力してください: ")
+city_names = [name.strip() for name in city_names_input.split(',')]
+
+# 結果を保存するリストを初期化
+results = []
+
+for city_name in city_names:
+    try:
+        # 入力された市区町村名のリンクを取得してクリック
+        city_link = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, f'//li/a[contains(text(), "{city_name}")]'))
+        )
+        
+        # クリックしてページ遷移
+        city_link.click()
+        print(f"{city_name}のリンクをクリックしました。")
+        
+        # 画面遷移を待機してURLを取得
+        WebDriverWait(driver, 10).until(EC.url_changes(url))
+        new_url = driver.current_url
+        print(f"遷移後のURL: {new_url}")
+
+        # 結果をリストに追加
+        results.append({'市区町村': city_name, 'URL': new_url})
+
+        # 元のページに戻る
+        driver.back()
+        
+        # ページが再読み込みされるので待機
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, f'//li/a[contains(text(), "{city_name}")]')))
+    
+    except Exception as e:
+        print(f"Error: {e}")
+
+# 取得したURLをExcelに保存
+if results:
+    df = pd.DataFrame(results)
+    
+    # 出力ファイルパスをユーザーのドキュメントフォルダに設定
+    output_directory = os.path.join(os.path.expanduser('~'), 'Documents')
+    output_file_path = os.path.join(output_directory, 'city_urls.xlsx')
+    
+    # データフレームをExcelファイルに書き出す
+    df.to_excel(output_file_path, index=False, engine='openpyxl')
+    
+    print(f"Excelファイル '{output_file_path}' に保存されました！")
+
+# ウェブドライバーを終了
+driver.quit()
+#2024_08_14カンマ区切りで市区町村名称を完全一致で検索、リンク文字列のURLをExcel出力します。xx,xx,xxで入れてください！GUI化する
