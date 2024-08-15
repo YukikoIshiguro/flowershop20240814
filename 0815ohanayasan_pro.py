@@ -1,0 +1,167 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
+import pandas as pd
+import os
+import re
+import time
+
+# WebDriverのパスを設定
+driver_path = 'C:\\Users\\USER\\Desktop\\chromedriver.exe'
+
+# サービスオブジェクトを作成してWebDriverに渡す
+service = Service(driver_path)
+driver = webdriver.Chrome(service=service)
+
+# 指定されたURLにアクセス★ここにURLを入れてください★ｘｘ県ｘｘ市のＵＲＬ
+url = 'https://www.hanacupid.or.jp/stores/results?pref=31&city=202'
+driver.get(url)
+
+# ページの読み込みを待機
+try:
+    # クラス名が 'name' の div が見つかるまで最大10秒待機
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.name')))
+    print("Page loaded successfully.")
+except Exception as e:
+    print(f"Error: {e}")
+    driver.quit()
+    exit()
+
+# スクロールしてページ全体のデータを読み込む関数
+def scroll_to_bottom(driver):
+    """ページを下までスクロールする関数"""
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    while True:
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+        last_height = new_height
+
+# スクロールしてページを下まで移動
+scroll_to_bottom(driver)
+
+# 店舗リンクを取得
+def get_store_links(driver):
+    """店舗リンクを取得する関数"""
+    store_links = []
+    # 正しいセレクタを確認する
+    store_divs = driver.find_elements(By.CSS_SELECTOR, 'div.name a')  # div.name の下の a タグを取得
+    if not store_divs:
+        print("No store links found. Please check the selector.")
+    for store_div in store_divs:
+        link = store_div.get_attribute('href')
+        store_links.append(link)
+    return store_links
+
+# 店舗の詳細ページからデータを取得する関数
+def get_store_data(store_url):
+    """店舗の詳細ページからデータを取得する関数"""
+    driver.get(store_url)
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'data')))
+    
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    
+    # 店名を取得
+    store_name_tag = soup.find('h2', class_='storeName')
+    store_name = store_name_tag.text.strip() if store_name_tag else '店名が見つかりませんでした'
+
+    # 定休日情報を取得
+    holiday_element = soup.select_one('dt:contains("定休日") + dd')
+    holiday_info = holiday_element.text.strip() if holiday_element else '定休日情報が見つかりませんでした'
+
+    # 営業時間情報を取得する関数
+    def get_business_hours(soup):
+        """営業時間情報を取得する関数"""
+        # 営業時間のCSSセレクタやXPath
+        business_hours_selectors = [
+            "dt:contains('営業時間') + dd",
+            "#wrap > main > article > div > div > div.data > dl > dd:nth-child(9)",
+            "div.data dl > dd:nth-of-type(5)",
+            "div.data dd:nth-of-type(5)"  # ここはサンプル
+        ]
+        
+        # 営業時間情報の取得
+        for selector in business_hours_selectors:
+            business_hours_element = soup.select_one(selector)
+            if business_hours_element:
+                return business_hours_element.text.strip()
+        
+        return "営業時間情報が見つかりませんでした"
+
+    # 住所から郵便番号を削除する関数
+    def remove_postal_code(address):
+        """住所から郵便番号を削除する関数"""
+        postal_code_pattern = r'〒\d{3}-\d{4}'
+        return re.sub(postal_code_pattern, '', address).strip()
+
+    # 'data' クラスの <div> を取得
+    data_div = soup.find('div', class_='data')
+
+    # データ格納用辞書
+    data_dict = {
+        '店名': store_name,
+        '住所': '',
+        '電話番号': '',
+        '定休日': holiday_info,
+        '営業時間（平日）': ''  # ヘッダーを修正
+    }
+
+    if data_div is not None:
+        # <dt> と <dd> のペアを取得して辞書に格納
+        for dt, dd in zip(data_div.find_all('dt'), data_div.find_all('dd')):
+            item_name = dt.text.strip()
+            item_content = dd.text.strip()
+
+            # 「配達エリア」の文字列を削除
+            if "配達エリア" in item_name:
+                item_name = item_name.replace("配達エリア", "").strip()
+
+            # 辞書に対応するデータを格納
+            if "住所" in item_name:
+                data_dict['住所'] = remove_postal_code(item_content)  # 郵便番号を削除
+            elif "電話番号" in item_name:
+                data_dict['電話番号'] = item_content
+            elif "営業時間" in item_name:
+                data_dict['営業時間（平日）'] = item_content
+
+    # 営業時間情報を取得
+    data_dict['営業時間（平日）'] = get_business_hours(soup)
+
+    return data_dict
+
+# 店舗リンクを取得
+store_links = get_store_links(driver)
+
+# すべての店舗データを取得
+all_data = []
+for link in store_links:
+    try:
+        store_data = get_store_data(link)
+        all_data.append(store_data)
+        print(f"Data for {link} retrieved successfully.")
+    except Exception as e:
+        print(f"Error retrieving data for {link}: {e}")
+
+# 出力用データフレームを作成
+df = pd.DataFrame(all_data)
+
+# 出力ファイルパスをユーザーのドキュメントフォルダに設定
+output_directory = os.path.join(os.path.expanduser('~'), 'Documents')
+output_file_path = os.path.join(output_directory, 'ohanayasan_result_info.xlsx')
+
+# Excelに出力
+with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
+    # ヘッダー情報を設定（定休日と営業時間の順序を変更）
+    header = ['店名', '住所', '電話番号', '営業時間（平日）', '定休日']
+    df = df[header]  # 列の順序を指定
+    df.to_excel(writer, index=False, header=header, startrow=0, startcol=0)
+
+print(f"Excelファイル '{output_file_path}' に保存されました！")
+
+# ウェブドライバーを終了
+driver.quit()
